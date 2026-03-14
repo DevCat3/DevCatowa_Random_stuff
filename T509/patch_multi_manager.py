@@ -695,6 +695,61 @@ def main():
          '}'),
         "apk_sign.c is_manager_apk")
 
+    # 7h. fix debug section in apk_sign.c
+    c = c.replace(
+        '\tksu_set_manager_appid(ksu_debug_manager_appid);\n'
+        '\tpr_info("ksu_manager_appid set to %d\\n", ksu_debug_manager_appid);\n',
+        '\tksu_register_manager(ksu_debug_manager_appid, 0);\n'
+        '\tpr_info("ksu_manager_appid set to %d\\n", ksu_debug_manager_appid);\n',
+        1
+    )
+
+    write(p, c)
+
+    # ------------------------------------------------------------------
+    # 7b: allowlist.c
+    # ------------------------------------------------------------------
+    print("[7b/13] Patching allowlist.c")
+    p = os.path.join(kdir, "allowlist.c")
+    c = read(p)
+    c = c.replace(
+        '\tif (likely(ksu_is_manager_appid_valid()) &&\n'
+        '\t    unlikely(ksu_get_manager_appid() == uid % PER_USER_RANGE)) {\n'
+        '\t\t// manager is always allowed!\n'
+        '\t\treturn true;\n'
+        '\t}',
+        '\tif (unlikely(ksu_is_manager_uid(uid))) {\n'
+        '\t\t// manager is always allowed!\n'
+        '\t\treturn true;\n'
+        '\t}'
+    )
+    c = c.replace(
+        '\tif (likely(ksu_is_manager_appid_valid()) &&\n'
+        '\t    unlikely(ksu_get_manager_appid() == uid % PER_USER_RANGE)) {\n'
+        '\t\t// we should not umount on manager!\n'
+        '\t\treturn false;\n'
+        '\t}',
+        '\tif (unlikely(ksu_is_manager_uid(uid))) {\n'
+        '\t\t// we should not umount on manager!\n'
+        '\t\treturn false;\n'
+        '\t}'
+    )
+    if 'ksu_is_manager_appid_valid' in c:
+        print("  [FAIL] allowlist.c still has old API calls")
+        sys.exit(1)
+    write(p, c)
+
+    # ------------------------------------------------------------------
+    # 7c: setuid_hook.c
+    # ------------------------------------------------------------------
+    print("[7c/13] Patching setuid_hook.c")
+    p = os.path.join(kdir, "setuid_hook.c")
+    c = read(p)
+    c = c.replace(
+        '\tif (ksu_get_manager_appid() == new_uid % PER_USER_RANGE) {\n',
+        '\tif (ksu_is_manager_uid(new_uid)) {\n',
+        1
+    )
     write(p, c)
 
     # ------------------------------------------------------------------
@@ -812,6 +867,13 @@ def main():
          '\t{ .cmd = 0, .name = NULL, .handler = NULL, .perm_check = NULL }\n'
          '};'),
         "supercalls.c ioctl table")
+
+    # fix do_get_manager_appid — return ksu_last_manager_appid
+    c = c.replace(
+        '\tcmd.appid = ksu_get_manager_appid();\n',
+        '\tcmd.appid = ksu_last_manager_appid;\n',
+        1
+    )
 
     write(p, c)
 
